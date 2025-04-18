@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI Resume SortList System</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 40px;
+      background-color: #f4f4f4;
+    }
+    h1 {
+      text-align: center;
+    }
+    input, textarea, button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      font-size: 16px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    .resume-card {
+      background: white;
+      padding: 20px;
+      margin-top: 20px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .progress {
+      background-color: #ddd;
+      border-radius: 5px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-bar {
+      height: 20px;
+      background-color: #4CAF50;
+      text-align: center;
+      color: white;
+      line-height: 20px;
+    }
+    .highlight {
+      background-color: yellow;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🧠 AI Resume SortList System</h1>
+
+<label for="jobKeywords">Job Keywords (e.g. React, Python, ML):</label>
+<input type="text" id="jobKeywords" placeholder="e.g. JavaScript, React, API">
+
+<label for="resumes">Paste Resumes (one per block, separated by ---):</label>
+<textarea id="resumes" rows="12" placeholder="Paste resumes here... Use '---' to separate them."></textarea>
+
+<button onclick="sortResumes()">🔍 Sort Resumes</button>
+<div id="output"></div>
+
+<script>
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^=!:${}()|\[\]\/\\]/g, '\\$&');
+}
+
+function highlightKeywords(text, keywords) {
+  keywords.forEach(keyword => {
+    const regex = new RegExp(escapeRegExp(keyword), 'gi');
+    text = text.replace(regex, '<span class="highlight">$&</span>');
+  });
+  return text;
+}
+
+function scoreResume(resume, keywords) {
+  let score = 0;
+  keywords.forEach(keyword => {
+    const count = (resume.toLowerCase().match(new RegExp(keyword.toLowerCase(), 'g')) || []).length;
+    score += count;
+  });
+  return score;
+}
+
+function sortResumes() {
+  const keywords = document.getElementById("jobKeywords").value.split(",").map(k => k.trim().toLowerCase()).filter(k => k);
+  const resumeBlocks = document.getElementById("resumes").value.split('---').map(r => r.trim()).filter(r => r);
+
+  const scored = resumeBlocks.map((text, idx) => {
+    const score = scoreResume(text, keywords);
+    return {
+      id: idx + 1,
+      raw: text,
+      highlighted: highlightKeywords(text, keywords),
+      score,
+      percentage: keywords.length > 0 ? Math.min(100, Math.round((score / keywords.length) * 100)) : 0
+    };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const outputDiv = document.getElementById("output");
+  outputDiv.innerHTML = '';
+
+  if (scored.length === 0) {
+    outputDiv.innerHTML = "No resumes to display.";
+    return;
+  }
+
+  scored.forEach(resume => {
+    const card = document.createElement('div');
+    card.className = 'resume-card';
+    card.innerHTML = `
+      <h3>📄 Resume #${resume.id} - Score: ${resume.score}</h3>
+      <div class="progress">
+        <div class="progress-bar" style="width: ${resume.percentage}%">${resume.percentage}%</div>
+      </div>
+      <p>${resume.highlighted}</p>
+    `;
+    outputDiv.appendChild(card);
+  });
+}
+</script>
+
+</body>
+</html>

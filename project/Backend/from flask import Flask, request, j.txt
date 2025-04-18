@@ -1,0 +1,143 @@
+from flask import Flask, request, jsonify
+import spacy
+import docx
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# Load spaCy model
+nlp = spacy.load('en_core_web_sm')
+
+
+# --- Helper: Parse DOCX Resume ---
+def parse_docx(file):
+    doc = docx.Document(file)
+    text = "\n".join([para.text for para in doc.paragraphs])
+    return text
+
+
+# --- Helper: Parse Resume and Extract Data ---
+def parse_resume(file):
+    file_extension = file.filename.split('.')[-1].lower()
+
+    if file_extension == 'docx':
+        resume_text = parse_docx(file)
+    elif file_extension in ['txt']:
+        resume_text = file.read().decode("utf-8")
+    else:
+        raise ValueError("Unsupported file format. Only DOCX and TXT are supported.")
+
+    doc = nlp(resume_text)
+
+    name = ""
+    skills = []
+    education = []
+    experience = []
+
+    for ent in doc.ents:
+        if ent.label_ == "PERSON" and not name:
+            name = ent.text
+        elif ent.label_ in ["ORG", "PRODUCT"]:
+            skills.append(ent.text)
+        elif ent.label_ == "GPE":
+            education.append(ent.text)
+
+    for sent in doc.sents:
+        if "experience" in sent.text.lower() or "worked" in sent.text.lower():
+            experience.append(sent.text.strip())
+
+    return {
+        'name': name,
+        'skills': skills,
+        'education': education,
+        'experience': experience
+    }
+
+
+# --- Helper: Shortlist Candidates ---
+def shortlist_candidates(job_description, resumes):
+    job_desc = [job_description]
+    resume_texts = [r['skills'] + " " + " ".join(r['experience']) for r in resumes]
+
+    vectorizer = TfidfVectorizer().fit_transform(job_desc + resume_texts)
+    cosine_similarities = cosine_similarity(vectorizer[0:1], vectorizer[1:])
+
+    shortlisted = []
+    for idx, score in enumerate(cosine_similarities[0]):
+        shortlisted.append({
+            'resume': resumes[idx],
+            'score': round(float(score), 2)
+        })
+
+    return sorted(shortlisted, key=lambda x: x['score'], reverse=True)
+
+
+# --- Helper: Create Resume ---
+def create_resume(user_data):
+    name = user_data.get('name', 'N/A')
+    skills = ", ".join(user_data.get('skills', []))
+    education = ", ".join(user_data.get('education', []))
+    experience = "\n".join(user_data.get('experience', []))
+
+    resume_text = f"""
+    Resume
+    ======
+    Name: {name}
+    
+    Skills:
+    {skills}
+
+    Education:
+    {education}
+
+    Experience:
+    {experience}
+    """
+    return {'resume': resume_text.strip()}
+
+
+# --- API Routes ---
+
+@app.route('/')
+def index():
+    return "Welcome to the AI Resume Shortlisting and Creation API!"
+
+
+@app.route('/parse_resume', methods=['POST'])
+def parse_resume_api():
+    file = request.files.get('resume')
+    if file:
+        try:
+            data = parse_resume(file)
+            return jsonify(data), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    return jsonify({'error': 'No resume file provided'}), 400
+
+
+@app.route('/shortlist', methods=['POST'])
+def shortlist_api():
+    data = request.get_json()
+    job_desc = data.get('job_description')
+    resumes = data.get('resumes')
+
+    if job_desc and resumes:
+        result = shortlist_candidates(job_desc, resumes)
+        return jsonify(result), 200
+    return jsonify({'error': 'Missing job description or resumes'}), 400
+
+
+@app.route('/create_resume', methods=['POST'])
+def create_resume_api():
+    user_data = request.get_json()
+    if user_data:
+        resume = create_resume(user_data)
+        return jsonify(resume), 200
+    return jsonify({'error': 'Missing user data'}), 400
+
+
+# Run the app
+if __name__ == '__main__':
+    app.run(debug=True)
